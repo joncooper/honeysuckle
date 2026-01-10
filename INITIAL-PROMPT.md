@@ -69,9 +69,11 @@ The system recognizes action risk/complexity and defers appropriately:
 ### Implementation Phases
 
 **Phase 1:** Voice-only core (works in all contexts)
-**Phase 2:** Desktop companion UI (full inbox, calendar, compose)
-**Phase 3:** Mobile adaptive UI + CarPlay integration
-**Phase 4:** Cross-device handoff and queue management
+**Phase 2:** Safety & polish (approval flow, barge-in, ambient feedback)
+**Phase 3:** Desktop companion UI (full inbox, calendar, compose)
+**Phase 4:** Mobile UI (phone-in-hand experience)
+**Phase 5:** Context & handoff (cross-device sync, task queue)
+**Phase 6:** CarPlay (in-car voice experience)
 
 ---
 
@@ -603,27 +605,38 @@ Tasks:
 
 **Done when:** Desktop users have full visual + voice experience.
 
-### Milestone 4: Context & Handoff
+### Milestone 4: Mobile UI
+**Goal:** Phone-in-hand experience
+
+Tasks:
+- Mobile-responsive UI (touch + voice hybrid)
+- Optimized mobile inbox/calendar views
+- Swipe gestures for common actions
+- iOS app wrapper (PWA or native shell)
+
+**Done when:** Full experience on phone in hand.
+
+### Milestone 5: Context & Handoff
 **Goal:** Seamless multi-context experience
 
 Tasks:
 - UX context detection (how does system know current mode?)
 - Task queue (defer actions to high-bandwidth contexts)
 - Cross-device state sync
-- Mobile-responsive UI
+- Handoff protocol (car → desktop, etc.)
 
 **Done when:** User can start task in car, complete on desktop.
 
-### Milestone 5: CarPlay & Mobile
-**Goal:** Full multi-platform support
+### Milestone 6: CarPlay
+**Goal:** In-car voice experience
 
 Tasks:
 - CarPlay integration
-- iOS app wrapper
-- Optimized mobile UI
+- Glanceable UI (large text, no scrolling)
 - Voice-only mode polish
+- Preset button actions
 
-**Done when:** Works seamlessly across all 5 contexts.
+**Done when:** Works seamlessly in CarPlay and Bluetooth car contexts.
 
 ---
 
@@ -636,8 +649,9 @@ After scaffolding the project, populate beans with the roadmap:
 beans create "Voice Core (MVP)" -t milestone -d "Voice conversation that can read emails"
 beans create "Safety & Polish" -t milestone -d "Safe tool execution with voice approval"
 beans create "Desktop UI" -t milestone -d "Full desktop companion experience"
+beans create "Mobile UI" -t milestone -d "Phone-in-hand experience"
 beans create "Context & Handoff" -t milestone -d "Seamless multi-context experience"
-beans create "CarPlay & Mobile" -t milestone -d "Full multi-platform support"
+beans create "CarPlay" -t milestone -d "In-car voice experience"
 
 # Create initial tasks under Milestone 1 (use actual milestone ID)
 beans create "FastAPI WebSocket endpoint" -t task --parent <milestone-1-id>
