@@ -567,46 +567,92 @@ Phoenix integration for development visibility into traces.
 
 ## 8. Implementation Plan
 
-### Phase 1: Voice Core (MVP)
-- [ ] FastAPI WebSocket endpoint
-- [ ] OpenAI Realtime client (bidirectional audio)
-- [ ] Claude Agent SDK integration with gday
-- [ ] Basic SessionManager (no approval flow yet)
-- [ ] Minimal frontend (audio viz + state indicator)
-- **Milestone:** Voice conversation that can read emails
+### Milestone 1: Voice Core (MVP)
+**Goal:** Voice conversation that can read emails
 
-### Phase 2: Safety & Polish
-- [ ] Voice-based approval flow
-- [ ] Action risk assessment
-- [ ] Barge-in handling
-- [ ] Ambient audio feedback
-- [ ] Thoughts Log UI
-- **Milestone:** Safe tool execution with voice approval
+Tasks:
+- FastAPI WebSocket endpoint (`/ws/audio`)
+- OpenAI Realtime client (bidirectional audio streaming)
+- Claude Agent SDK integration with gday CLI
+- Basic SessionManager (Receptionist → Professor handoff)
+- Minimal frontend (audio visualizer + state indicator)
 
-### Phase 3: Desktop UI
-- [ ] Inbox view
-- [ ] Email reader
-- [ ] Compose panel
-- [ ] Calendar widget
-- [ ] Visual approval modal
-- **Milestone:** Full desktop experience
+**Done when:** User can ask "What emails do I have?" and hear the response.
 
-### Phase 4: Context & Handoff
-- [ ] UX context detection
-- [ ] Task queue (defer to desktop)
-- [ ] Cross-device state sync
-- [ ] Mobile-responsive UI
-- **Milestone:** Seamless multi-context experience
+### Milestone 2: Safety & Polish
+**Goal:** Safe tool execution with voice approval
 
-### Phase 5: CarPlay & Mobile
-- [ ] CarPlay integration
-- [ ] iOS app wrapper
-- [ ] Optimized mobile UI
-- **Milestone:** Full multi-platform support
+Tasks:
+- Voice-based approval flow via Agent SDK hooks
+- Action risk assessment (classify operations by risk level)
+- Barge-in handling (cancel Professor on VAD)
+- Ambient audio feedback during thinking
+- Thoughts Log UI (stream tool use to frontend)
+
+**Done when:** Sending an email requires voice confirmation.
+
+### Milestone 3: Desktop UI
+**Goal:** Full desktop companion experience
+
+Tasks:
+- Inbox view component
+- Email reader component
+- Compose panel (with draft preview)
+- Calendar widget
+- Visual approval modal (for desktop context)
+
+**Done when:** Desktop users have full visual + voice experience.
+
+### Milestone 4: Context & Handoff
+**Goal:** Seamless multi-context experience
+
+Tasks:
+- UX context detection (how does system know current mode?)
+- Task queue (defer actions to high-bandwidth contexts)
+- Cross-device state sync
+- Mobile-responsive UI
+
+**Done when:** User can start task in car, complete on desktop.
+
+### Milestone 5: CarPlay & Mobile
+**Goal:** Full multi-platform support
+
+Tasks:
+- CarPlay integration
+- iOS app wrapper
+- Optimized mobile UI
+- Voice-only mode polish
+
+**Done when:** Works seamlessly across all 5 contexts.
 
 ---
 
-## 9. Open Questions
+## 9. Beans Roadmap Setup
+
+After scaffolding the project, populate beans with the roadmap:
+
+```bash
+# Create milestones
+beans create "Voice Core (MVP)" -t milestone -d "Voice conversation that can read emails"
+beans create "Safety & Polish" -t milestone -d "Safe tool execution with voice approval"
+beans create "Desktop UI" -t milestone -d "Full desktop companion experience"
+beans create "Context & Handoff" -t milestone -d "Seamless multi-context experience"
+beans create "CarPlay & Mobile" -t milestone -d "Full multi-platform support"
+
+# Create initial tasks under Milestone 1 (use actual milestone ID)
+beans create "FastAPI WebSocket endpoint" -t task --parent <milestone-1-id>
+beans create "OpenAI Realtime client" -t task --parent <milestone-1-id>
+beans create "Claude Agent SDK integration with gday" -t task --parent <milestone-1-id>
+beans create "Basic SessionManager" -t task --parent <milestone-1-id>
+beans create "Minimal frontend (audio viz + state)" -t task --parent <milestone-1-id>
+```
+
+Run `beans roadmap` to view the project roadmap.
+Run `beans tui` for interactive task management.
+
+---
+
+## 10. Open Questions
 
 1. **Ambient audio approach:** Verbal acknowledgments vs. audio cues vs. silence with visual indicator?
 
@@ -620,11 +666,31 @@ Phoenix integration for development visibility into traces.
 
 ---
 
-## Next Steps
+## 11. Next Steps
 
-Confirm this architecture and I will generate the initial scaffolding:
-1. Backend pyproject.toml and directory structure
-2. Frontend package.json and Vite config
-3. Core SessionManager implementation
-4. OpenAI Realtime client stub
-5. Claude Agent SDK integration with gday
+Generate the initial scaffolding in this order:
+
+1. **Backend setup:**
+   - Create `backend/pyproject.toml` with dependencies
+   - Create directory structure per Section 5
+   - Stub out `main.py` with FastAPI app and WebSocket endpoint
+   - Create `config.py` with pydantic-settings
+
+2. **Frontend setup:**
+   - Create `frontend/package.json`
+   - Set up Vite + React + TypeScript
+   - Configure Tailwind + shadcn/ui
+   - Create minimal App with audio visualizer placeholder
+
+3. **Beans roadmap:**
+   - Create milestones per Section 9
+   - Create initial tasks for Milestone 1
+   - Run `beans roadmap` to verify
+
+4. **Core implementation (Milestone 1):**
+   - OpenAI Realtime client
+   - Claude Agent SDK integration
+   - SessionManager skeleton
+   - Wire it all together
+
+5. **Update WORKLOG.md** with progress
