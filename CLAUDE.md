@@ -15,6 +15,7 @@ See `INITIAL-PROMPT.md` for full architecture specification.
 1. **Run `beans prime`** to load current tasks into context
 2. **Read `WORKLOG.md`** - especially the most recent entry's "Next" section
 3. **Summarize** the current state and planned work to the user
+4. **If dev work is needed and running in tmux**, start servers in panes (see "Running Dev Servers" section)
 
 ### During Session
 
@@ -84,21 +85,47 @@ Run `/worklog` to update the work log, or manually:
 **Frontend:** React, Vite, TypeScript, shadcn/ui, Tailwind
 **Tools:** `gday` CLI at `~/.local/bin/gday` for Gmail/Calendar
 **Task Management:** beans (`beans` CLI)
+**Package Managers:** Always use `uv` for Python, `bun` for Node.js
 
 ## External Dependencies
 
 - `gday` CLI must be installed and authenticated (`gday auth status`)
-- OpenAI API key required for Realtime API
-- Anthropic API key required for Claude Agent SDK
+- OpenAI API key required for Realtime API (in `.env`)
+- Claude Agent SDK auth: Use Claude Max subscription via OAuth (not API key)
+  - TODO: Figure out auth approach - either OAuth flow or extract token from Claude Code session
+
+## Running Dev Servers (tmux)
+
+When running in tmux, start the dev servers in split panes rather than background processes:
+
+```bash
+# Split bottom 25% for servers, then split that in half
+tmux split-window -v -p 25 -c /Users/jdc/src/honeysuckle/backend
+tmux split-window -h -c /Users/jdc/src/honeysuckle/frontend
+
+# Start servers in each pane
+tmux send-keys -t {bottom-left} 'uv run uvicorn honeysuckle.main:app --reload' Enter
+tmux send-keys -t {bottom-right} 'bun run dev' Enter
+
+# Return focus to main pane
+tmux select-pane -t {top}
+```
+
+This gives you:
+- **Top pane:** Claude Code session
+- **Bottom-left:** Backend (http://localhost:8000)
+- **Bottom-right:** Frontend (http://localhost:3000)
+
+**Important:** Always prefer tmux panes over background processes (`&`) for dev servers. This keeps output visible and avoids orphaned processes.
 
 ## Development Commands
 
 ```bash
-# Backend
+# Backend (always use uv)
 cd backend && uv sync && uv run uvicorn honeysuckle.main:app --reload
 
-# Frontend
-cd frontend && npm install && npm run dev
+# Frontend (always use bun)
+cd frontend && bun install && bun run dev
 
 # Task management
 beans prime          # Load context for AI session

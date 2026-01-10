@@ -39,3 +39,128 @@ A running log of work sessions, achievements, architectural decisions, and next 
 - Set up backend with FastAPI and WebSocket endpoint
 - Set up frontend with React/Vite
 - Implement basic OpenAI Realtime client
+
+---
+
+## [2026-01-10] Project Scaffolding Complete
+
+**Achieved:**
+- Scaffolded complete backend structure per INITIAL-PROMPT.md Section 5
+  - `backend/pyproject.toml` with all dependencies (FastAPI, Claude Code SDK, OpenAI, etc.)
+  - `backend/src/honeysuckle/main.py` - FastAPI app with `/ws/audio` WebSocket endpoint
+  - `backend/src/honeysuckle/config.py` - pydantic-settings configuration
+  - `backend/src/honeysuckle/session/` - SessionManager, state, and context detection
+  - `backend/src/honeysuckle/receptionist/` - OpenAI Realtime client, audio buffer, functions
+  - `backend/src/honeysuckle/professor/` - Claude Agent SDK client, prompts, hooks, tools
+  - `backend/src/honeysuckle/approval/` - Voice approval flow and risk assessment
+  - `backend/src/honeysuckle/observability/` - OTel tracing and Phoenix setup
+- Scaffolded complete frontend structure
+  - `frontend/package.json` with React, Vite, Tailwind, Radix UI
+  - `frontend/src/App.tsx` - Main app with audio viz, state indicator, thoughts log
+  - `frontend/src/contexts/SessionContext.tsx` - Session state management
+  - `frontend/src/components/` - AudioVisualizer, StateIndicator, ThoughtsLog
+  - `frontend/src/hooks/` - useAudioStream, useVAD, useSession
+  - `frontend/src/lib/` - Audio utilities, API client, cn helper
+- Created beans milestones for full roadmap:
+  - honeysuckle-lrb4: Voice Core (MVP) [todo]
+  - honeysuckle-yf92: Safety & Polish [draft]
+  - honeysuckle-1nkv: Desktop UI [draft]
+  - honeysuckle-lcpy: Mobile UI [draft]
+  - honeysuckle-rptc: Context & Handoff [draft]
+  - honeysuckle-29s0: CarPlay [draft]
+- Created Milestone 1 tasks under Voice Core:
+  - honeysuckle-0i08: FastAPI WebSocket endpoint
+  - honeysuckle-rch4: OpenAI Realtime client
+  - honeysuckle-j7dk: Claude Agent SDK integration with gday
+  - honeysuckle-8ku5: Basic SessionManager handoff
+  - honeysuckle-ii3m: Minimal frontend with audio viz
+
+**Lessons Learned:**
+- The Python SDK is `claude-agent-sdk` from https://github.com/anthropics/claude-agent-sdk-python
+- Frontend minimal scaffolding is already functional - AudioVisualizer, StateIndicator, ThoughtsLog all have working implementations
+- Risk assessment categorizes gday commands by action type (send=HIGH, archive=MEDIUM, read=LOW)
+
+**Next:**
+- Install backend dependencies: `cd backend && uv sync`
+- Install frontend dependencies: `cd frontend && bun install`
+- Implement OpenAI Realtime client connection (honeysuckle-rch4)
+- Wire up SessionManager to route ask_professor to Professor (honeysuckle-8ku5)
+- Test end-to-end voice flow with "What emails do I have?"
+
+---
+
+## [2026-01-10] Milestone 1: Voice Core MVP Complete
+
+**Achieved:**
+- Implemented full OpenAI Realtime client with bidirectional audio streaming
+  - `backend/src/honeysuckle/receptionist/client.py` - WebSocket connection, audio handling, function calls
+  - Added system prompt (instructions) to configure Receptionist behavior
+- Implemented Claude Agent SDK integration for Professor
+  - `backend/src/honeysuckle/professor/client.py` - Uses `query()` function with streaming events
+  - Configured with `bypassPermissions` mode (we handle approval ourselves)
+  - System prompt guides Professor to use gday CLI for email/calendar
+- Wired up SessionManager for full Receptionist → Professor handoff
+  - `backend/src/honeysuckle/session/manager.py` - Orchestrates both clients
+  - Handles audio forwarding, function call routing, state management
+- Updated frontend with real audio streaming
+  - `frontend/src/contexts/SessionContext.tsx` - Mic capture, audio playback, WebSocket handling
+  - `frontend/src/components/StateIndicator.tsx` - Connect/Disconnect + Start/Stop Mic buttons
+- Fixed configuration to find .env at project root
+- Disabled Phoenix by default (was blocking startup)
+
+**All Milestone 1 tasks completed:**
+- honeysuckle-0i08: FastAPI WebSocket endpoint
+- honeysuckle-rch4: OpenAI Realtime client
+- honeysuckle-j7dk: Claude Agent SDK integration with gday
+- honeysuckle-8ku5: Basic SessionManager handoff
+- honeysuckle-ii3m: Minimal frontend with audio viz
+
+**Lessons Learned:**
+- Claude Agent SDK uses `query()` for one-shot queries, `ClaudeSDKClient` for interactive sessions
+- SDK message types: `AssistantMessage` (with `TextBlock`, `ToolUseBlock`), `ResultMessage`
+- OpenAI Realtime uses `instructions` field for system prompt (not `system_prompt`)
+- Phoenix tracing can block startup if misconfigured - disabled by default for now
+
+**Next:**
+- Test end-to-end: "What emails do I have?" should trigger gday and return results
+- Start Milestone 2: Safety & Polish (voice approval, barge-in, ambient feedback)
+- Add error handling for OpenAI Realtime connection failures
+- Consider adding reconnection logic for dropped connections
+
+---
+
+## [2026-01-10] Milestone 1 Complete - Voice Core Working
+
+**Achieved:**
+- End-to-end voice flow working: User can say "What emails do I have?" and hear the response
+- Fixed critical concurrency bug: Professor now runs as background task
+- Fixed greeting: Uses pattern from OpenAI community - inject user message with instruction
+- Fixed audio playback: Resume AudioContext when suspended
+- Fixed transcript display: Use complete transcripts not word-by-word deltas
+- Added tmux workflow: Dev servers run in split panes, documented in CLAUDE.md
+
+**Architectural Decisions:**
+- DECISION: Professor invocation must be non-blocking (`asyncio.create_task`)
+- REASON: Blocking the Receptionist event loop causes audio to queue up, resulting in out-of-order playback. Audio must continue flowing while Professor thinks.
+
+- DECISION: Use tmux panes for dev servers instead of background processes
+- REASON: Background shell processes create orphaned tasks and are hard to manage. Tmux panes keep output visible and are easy to kill.
+
+**Lessons Learned:**
+- **Critical:** Never `await` long operations in the Receptionist event loop - spawn as task
+- OpenAI Realtime greeting pattern: Create user message with instruction, then `response.create`
+- Browser AudioContext starts suspended - must call `resume()` after user interaction
+- Use `response.audio_transcript.done` for complete transcripts, not `.delta` events
+- Logging truncates in tmux - filter to relevant events for debugging
+
+**Bugs Fixed:**
+- honeysuckle-07i2: Receptionist event loop blocks during Professor invocation
+
+**Known Issues:**
+- honeysuckle-6toj: Claude Agent SDK cancel scope error (cosmetic, doesn't break flow)
+
+**Next:**
+- Commit this working state
+- Start Milestone 2: Safety & Polish
+- Enable Phoenix tracing for better observability
+- Fix the SDK cancel scope error
