@@ -59,10 +59,15 @@ class SessionManager:
         self._last_status_speak_time: float = 0  # For debouncing status updates
         self._session_id = str(uuid.uuid4())  # Unique ID for Phoenix session tracking
 
-        # Span tracking for conversation turns
-        # A "turn" is: user speaks → system processes → system responds
-        self._current_turn_span = None       # Parent span for the whole turn
-        self._current_turn_context: Context | None = None  # Context for creating child spans
+        # Span tracking hierarchy:
+        # session (root) → conversation_turn → user_utterance/routing/professor
+        self._session_span = None            # Root span for entire session
+        self._session_context: Context | None = None  # Context for session-level children
+        self._session_start_time: float = 0
+        self._turn_number: int = 0           # Counter for turn numbering
+
+        self._current_turn_span = None       # Current turn span (child of session)
+        self._current_turn_context: Context | None = None  # Context for turn-level children
         self._turn_start_time: float = 0
 
         logger.info(f"Session created with ID: {self._session_id}")
@@ -73,6 +78,9 @@ class SessionManager:
         await self._emit_state()
         logger.info("Session started, connecting to OpenAI Realtime...")
 
+        # Start the session-level root span
+        self._start_session()
+
         # Connect to OpenAI Realtime
         try:
             await self.receptionist.connect()
@@ -82,13 +90,15 @@ class SessionManager:
         except Exception as e:
             logger.error(f"Failed to connect to OpenAI Realtime: {e}")
             await self._emit_event("error", {"message": f"Failed to connect: {e}"})
+            self._end_session(error=str(e))
             return
 
         # Start receptionist event loop
         self._receptionist_task = asyncio.create_task(self._receptionist_loop())
 
-        # Greet the user
-        await self.receptionist.speak("Hi! I'm Honeysuckle, your email and calendar assistant. How can I help you?")
+        # Greet the user (as a session-level child span)
+        with self._session_child_span("greeting") as span:
+            await self.receptionist.speak("Hi! I'm Honeysuckle, your email and calendar assistant. How can I help you?")
 
         # Handle client messages
         try:
@@ -133,27 +143,77 @@ class SessionManager:
                 pass
 
         await self.receptionist.disconnect()
+
+        # End the session span
+        self._end_session()
         logger.info(f"Session {self._session_id} cleaned up")
 
+    def _start_session(self) -> None:
+        """Start the root session span."""
+        self._session_start_time = time.time()
+        tracer = get_tracer()
+
+        self._session_span = tracer.start_span(
+            "session",
+            attributes={
+                SpanAttributes.SESSION_ID: self._session_id,
+            }
+        )
+        self._session_context = set_span_in_context(self._session_span)
+        logger.info(f"Started session span (id={self._session_id})")
+
+    def _end_session(self, error: str | None = None) -> None:
+        """End the root session span."""
+        if self._session_span:
+            duration = time.time() - self._session_start_time
+            self._session_span.set_attribute("duration_seconds", duration)
+            self._session_span.set_attribute("turn_count", self._turn_number)
+            if error:
+                self._session_span.set_attribute("error", error)
+            self._session_span.end()
+            self._session_span = None
+            self._session_context = None
+            logger.info(f"Ended session span (duration={duration:.2f}s, turns={self._turn_number})")
+
+    @contextmanager
+    def _session_child_span(self, name: str, **attributes):
+        """Create a child span under the session (not under a turn)."""
+        tracer = get_tracer()
+        if self._session_context:
+            span = tracer.start_span(name, context=self._session_context)
+        else:
+            span = tracer.start_span(name)
+
+        span.set_attribute(SpanAttributes.SESSION_ID, self._session_id)
+        for key, value in attributes.items():
+            span.set_attribute(key, value)
+        try:
+            yield span
+        finally:
+            span.end()
+
     def _start_turn(self, trigger: str) -> None:
-        """Start a new conversation turn span."""
+        """Start a new conversation turn span (as child of session)."""
         # End any existing turn first
         self._end_turn(interrupted=True)
 
+        self._turn_number += 1
         self._turn_start_time = time.time()
         tracer = get_tracer()
 
-        # Create the parent turn span
+        # Create turn span as child of session
         self._current_turn_span = tracer.start_span(
             "conversation_turn",
+            context=self._session_context,  # Child of session
             attributes={
                 SpanAttributes.SESSION_ID: self._session_id,
                 "trigger": trigger,
+                "turn_number": self._turn_number,
             }
         )
-        # Store context so child spans can be created under this parent
+        # Store context so child spans can be created under this turn
         self._current_turn_context = set_span_in_context(self._current_turn_span)
-        logger.info(f"Started conversation turn (trigger={trigger})")
+        logger.info(f"Started conversation turn #{self._turn_number} (trigger={trigger})")
 
     def _end_turn(self, interrupted: bool = False) -> None:
         """End the current conversation turn span."""
@@ -168,13 +228,16 @@ class SessionManager:
 
     @contextmanager
     def _child_span(self, name: str, **attributes):
-        """Create a child span under the current turn (as context manager)."""
+        """Create a child span under current turn, or session if no turn active."""
         tracer = get_tracer()
         if self._current_turn_context:
             # Create as child of the current turn
             span = tracer.start_span(name, context=self._current_turn_context)
+        elif self._session_context:
+            # No turn active, create as child of session
+            span = tracer.start_span(name, context=self._session_context)
         else:
-            # No turn active, create standalone span
+            # No session either, create standalone span
             span = tracer.start_span(name)
 
         span.set_attribute(SpanAttributes.SESSION_ID, self._session_id)

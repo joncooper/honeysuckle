@@ -142,3 +142,29 @@ beans done <id>      # Complete task
 3. **Human-in-the-loop:** Voice-based approval for sensitive operations
 4. **Split-brain:** Receptionist handles conversation flow, Professor handles reasoning
 5. **Ambient feedback:** Never go silent during thinking - provide audio cues
+
+## Tool Usage Patterns
+
+### Playwright (Browser Automation)
+
+**Always use a subagent for substantive Playwright operations.** The Playwright MCP tools return verbose accessibility snapshots that consume significant context.
+
+Instead of calling Playwright tools directly:
+```
+# BAD - consumes main context with large snapshots
+mcp__playwright__browser_navigate(...)
+mcp__playwright__browser_snapshot(...)
+mcp__playwright__browser_click(...)
+```
+
+Delegate to a subagent:
+```
+# GOOD - isolates context consumption
+Task(
+  subagent_type="Explore",
+  prompt="Navigate to Phoenix UI at localhost:6006 and describe what traces you see"
+)
+→ Returns concise summary
+```
+
+This keeps the main conversation context clean and lets the subagent iterate through multiple browser operations as needed.
