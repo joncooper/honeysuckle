@@ -202,3 +202,39 @@ A running log of work sessions, achievements, architectural decisions, and next 
 - Remove test spans polluting Phoenix UI
 - Start Safety & Polish milestone: voice approval flow, ambient feedback sounds
 - Fix Claude Agent SDK cancel scope error (honeysuckle-6toj)
+
+---
+
+## [2026-01-10] Session-Level Tracing & Cleanup
+
+**Achieved:**
+- Restructured Phoenix tracing with session-level root spans
+  - `session` span now encompasses entire WebSocket connection (connect → disconnect)
+  - `conversation_turn` spans are children of session
+  - `greeting` as session-level child span
+  - Turn numbering added for easier debugging
+- Added Playwright subagent pattern to CLAUDE.md
+  - Playwright MCP tools consume excessive context with accessibility snapshots
+  - Rule: always delegate to subagent for substantive browser operations
+- Cleaned up repo
+  - Deleted unused `useThinkingSound.ts` hook
+  - Added `.mcp.json` to gitignore
+
+**Architectural Decisions:**
+- DECISION: Session is the root trace, not individual turns
+- REASON: A session (mic on → mic off) is the meaningful unit for observability. You want to see everything that happened in one interaction as a single expandable tree, not disconnected turn traces.
+
+- DECISION: Use subagents for Playwright operations
+- REASON: Playwright accessibility snapshots are verbose and consume significant context. Delegating to a subagent isolates this, keeps main context clean, and lets the subagent iterate as needed.
+
+**Lessons Learned:**
+- Phoenix trace hierarchy must be explicit - spans don't auto-nest based on timing
+- Session-level spans require careful lifecycle management (start in `run()`, end in `cleanup()`)
+- MCP tools with verbose output (like Playwright) benefit from subagent isolation pattern
+
+**Next:**
+- Test session-level tracing with multi-turn conversation
+- Clean up verbose audio logging
+- Remove test spans polluting Phoenix UI
+- Start Safety & Polish milestone: voice approval flow, ambient feedback sounds
+- Fix Claude Agent SDK cancel scope error (honeysuckle-6toj)
