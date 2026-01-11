@@ -1,11 +1,20 @@
-import { SessionProvider } from './contexts/SessionContext'
+import { SessionProvider, useSession } from './contexts/SessionContext'
 import { AudioVisualizer } from './components/AudioVisualizer'
 import { StateIndicator } from './components/StateIndicator'
 import { ThoughtsLog } from './components/ThoughtsLog'
+import { useThinkingSound } from './hooks/useThinkingSound'
+
+// Component that handles ambient audio feedback
+function AmbientFeedback() {
+  const { state } = useSession()
+  useThinkingSound(state.phase)
+  return null
+}
 
 function App() {
   return (
     <SessionProvider>
+      <AmbientFeedback />
       <div className="min-h-screen bg-background flex flex-col items-center justify-center p-8">
         <h1 className="text-4xl font-bold mb-8 text-foreground">Honeysuckle</h1>
 

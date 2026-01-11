@@ -46,6 +46,34 @@ class FunctionCall(ReceptionistEvent):
     call_id: str
 
 
+@dataclass
+class SpeechStarted(ReceptionistEvent):
+    """User started speaking (VAD detected)."""
+
+    pass
+
+
+@dataclass
+class SpeechStopped(ReceptionistEvent):
+    """User stopped speaking (VAD detected)."""
+
+    pass
+
+
+@dataclass
+class ResponseStarted(ReceptionistEvent):
+    """Receptionist started generating a response."""
+
+    response_id: str
+
+
+@dataclass
+class ResponseDone(ReceptionistEvent):
+    """Receptionist finished generating a response."""
+
+    response_id: str
+
+
 class ReceptionistClient:
     """
     OpenAI Realtime API client.
@@ -207,6 +235,25 @@ class ReceptionistClient:
                 args=json.loads(event.get("arguments", "{}")),
                 call_id=event.get("call_id", ""),
             )
+
+        elif event_type == "input_audio_buffer.speech_started":
+            logger.info("VAD detected: user started speaking")
+            return SpeechStarted()
+
+        elif event_type == "input_audio_buffer.speech_stopped":
+            logger.info("VAD detected: user stopped speaking")
+            return SpeechStopped()
+
+        elif event_type == "response.created":
+            response_id = event.get("response", {}).get("id", "")
+            logger.info(f"Response started: {response_id}")
+            return ResponseStarted(response_id=response_id)
+
+        elif event_type == "response.done":
+            response_id = event.get("response", {}).get("id", "")
+            status = event.get("response", {}).get("status", "")
+            logger.info(f"Response done: {response_id} (status={status})")
+            return ResponseDone(response_id=response_id)
 
         return None
 

@@ -3,9 +3,17 @@
 import asyncio
 import json
 import logging
+import time
+import uuid
+from contextlib import contextmanager
 from typing import Any
 
 from fastapi import WebSocket
+from openinference.instrumentation import using_session
+from openinference.semconv.trace import SpanAttributes
+from opentelemetry import trace
+from opentelemetry.context import Context
+from opentelemetry.trace import set_span_in_context
 
 logger = logging.getLogger(__name__)
 
@@ -14,9 +22,21 @@ from honeysuckle.receptionist.client import (
     AudioDelta,
     FunctionCall,
     ReceptionistClient,
+    ResponseDone,
+    ResponseStarted,
+    SpeechStarted,
+    SpeechStopped,
     TranscriptDelta,
 )
 from honeysuckle.session.state import SessionPhase, SessionState
+
+# Minimum seconds between spoken status updates to avoid queue buildup
+STATUS_SPEAK_DEBOUNCE_SECONDS = 4.0
+
+
+def get_tracer():
+    """Get tracer lazily to ensure Phoenix is initialized first."""
+    return trace.get_tracer("honeysuckle.session")
 
 
 class SessionManager:
@@ -36,6 +56,16 @@ class SessionManager:
         self.professor_task: asyncio.Task | None = None
         self._running = False
         self._receptionist_task: asyncio.Task | None = None
+        self._last_status_speak_time: float = 0  # For debouncing status updates
+        self._session_id = str(uuid.uuid4())  # Unique ID for Phoenix session tracking
+
+        # Span tracking for conversation turns
+        # A "turn" is: user speaks → system processes → system responds
+        self._current_turn_span = None       # Parent span for the whole turn
+        self._current_turn_context: Context | None = None  # Context for creating child spans
+        self._turn_start_time: float = 0
+
+        logger.info(f"Session created with ID: {self._session_id}")
 
     async def run(self):
         """Main session loop."""
@@ -81,6 +111,13 @@ class SessionManager:
         """Clean up resources on session end."""
         self._running = False
 
+        # Close any open turn span
+        if self._current_turn_span:
+            self._current_turn_span.set_attribute("session_ended", True)
+            self._current_turn_span.end()
+            self._current_turn_span = None
+            self._current_turn_context = None
+
         if self._receptionist_task and not self._receptionist_task.done():
             self._receptionist_task.cancel()
             try:
@@ -96,6 +133,57 @@ class SessionManager:
                 pass
 
         await self.receptionist.disconnect()
+        logger.info(f"Session {self._session_id} cleaned up")
+
+    def _start_turn(self, trigger: str) -> None:
+        """Start a new conversation turn span."""
+        # End any existing turn first
+        self._end_turn(interrupted=True)
+
+        self._turn_start_time = time.time()
+        tracer = get_tracer()
+
+        # Create the parent turn span
+        self._current_turn_span = tracer.start_span(
+            "conversation_turn",
+            attributes={
+                SpanAttributes.SESSION_ID: self._session_id,
+                "trigger": trigger,
+            }
+        )
+        # Store context so child spans can be created under this parent
+        self._current_turn_context = set_span_in_context(self._current_turn_span)
+        logger.info(f"Started conversation turn (trigger={trigger})")
+
+    def _end_turn(self, interrupted: bool = False) -> None:
+        """End the current conversation turn span."""
+        if self._current_turn_span:
+            duration = time.time() - self._turn_start_time
+            self._current_turn_span.set_attribute("duration_seconds", duration)
+            self._current_turn_span.set_attribute("interrupted", interrupted)
+            self._current_turn_span.end()
+            self._current_turn_span = None
+            self._current_turn_context = None
+            logger.info(f"Ended conversation turn (duration={duration:.2f}s, interrupted={interrupted})")
+
+    @contextmanager
+    def _child_span(self, name: str, **attributes):
+        """Create a child span under the current turn (as context manager)."""
+        tracer = get_tracer()
+        if self._current_turn_context:
+            # Create as child of the current turn
+            span = tracer.start_span(name, context=self._current_turn_context)
+        else:
+            # No turn active, create standalone span
+            span = tracer.start_span(name)
+
+        span.set_attribute(SpanAttributes.SESSION_ID, self._session_id)
+        for key, value in attributes.items():
+            span.set_attribute(key, value)
+        try:
+            yield span
+        finally:
+            span.end()
 
     async def _receptionist_loop(self):
         """Handle events from the Receptionist."""
@@ -103,8 +191,24 @@ class SessionManager:
             async for event in self.receptionist.events():
                 if isinstance(event, AudioDelta):
                     # Forward audio to client
-                    logger.info(f"Audio: {len(event.data)} bytes -> client")
                     await self.websocket.send_bytes(event.data)
+
+                elif isinstance(event, SpeechStarted):
+                    # User started speaking - this begins a new turn
+                    logger.info("VAD: user started speaking")
+
+                    # Handle barge-in (cancel ongoing activity)
+                    await self._handle_barge_in()
+
+                    # Start new conversation turn
+                    self._start_turn(trigger="user_speech")
+
+                    self.state.phase = SessionPhase.LISTENING
+                    await self._emit_state()
+
+                elif isinstance(event, SpeechStopped):
+                    # User stopped speaking
+                    logger.info("VAD: user stopped speaking")
 
                 elif isinstance(event, TranscriptDelta):
                     # Send transcript to client
@@ -113,34 +217,87 @@ class SessionManager:
                         {"text": event.text, "role": event.role},
                     )
                     if event.role == "user":
-                        self.state.phase = SessionPhase.LISTENING
-                        await self._emit_state()
+                        # Record user utterance as child span
+                        with self._child_span("user_utterance", **{SpanAttributes.INPUT_VALUE: event.text[:500]}) as span:
+                            pass  # Span auto-ends
 
                 elif isinstance(event, FunctionCall):
+                    # Record routing decision as child span
+                    with self._child_span("receptionist_routing", routing_decision="professor", function_name=event.name) as span:
+                        pass
+
                     if event.name == "ask_professor":
                         # Hand off to Professor (non-blocking!)
-                        # Must not await - continue processing audio events while Professor runs
                         query = event.args.get("query", "")
                         logger.info(f"Function call: ask_professor({query[:50]}...) - spawning background task")
+                        # Pass turn context to professor so its spans are children of this turn
+                        turn_context = self._current_turn_context
                         self.professor_task = asyncio.create_task(
-                            self._invoke_professor(query, event.call_id)
+                            self._invoke_professor(query, event.call_id, turn_context)
                         )
+
+                elif isinstance(event, ResponseStarted):
+                    # Receptionist started responding
+                    self.state.phase = SessionPhase.RECEPTIONIST_SPEAKING
+                    await self._emit_state()
+                    logger.info(f"Response started: {event.response_id}")
+
+                elif isinstance(event, ResponseDone):
+                    # Receptionist finished responding - turn is complete
+                    self._end_turn(interrupted=False)
+                    self.state.phase = SessionPhase.IDLE
+                    await self._emit_state()
+                    logger.info(f"Response done: {event.response_id}")
 
         except asyncio.CancelledError:
             pass
 
-    async def _invoke_professor(self, query: str, call_id: str):
+    async def _invoke_professor(self, query: str, call_id: str, turn_context: Context | None):
         """Hand off to Professor for deep reasoning. Runs as background task."""
+        import datetime
+
+        tracer = get_tracer()
+
+        # Create professor_invocation as child of the turn
+        span = tracer.start_span(
+            "professor_invocation",
+            context=turn_context,
+            attributes={
+                SpanAttributes.SESSION_ID: self._session_id,
+                SpanAttributes.INPUT_VALUE: query[:500],
+                "call_id": call_id,
+            }
+        )
+        # Create context for tool spans to be children of professor_invocation
+        professor_context = set_span_in_context(span)
+
         logger.info(f"Professor starting for query: {query[:50]}...")
         self.state.phase = SessionPhase.PROFESSOR_THINKING
         await self._emit_state()
 
+        # Reset debounce so first status update gets spoken
+        self._last_status_speak_time = 0
+
         result_text = ""
+        tool_count = 0
 
         try:
             async for event in self.professor.run(query):
                 if isinstance(event, ToolStart):
+                    tool_count += 1
                     logger.info(f"Professor tool start: {event.name}")
+                    # Create child span for tool execution under professor_invocation
+                    tool_span = tracer.start_span(
+                        "tool_execution",
+                        context=professor_context,
+                        attributes={
+                            SpanAttributes.SESSION_ID: self._session_id,
+                            "tool.name": event.name,
+                            "tool.input": str(event.input)[:500],
+                        }
+                    )
+                    tool_span.end()  # Tool events don't have duration info, end immediately
+
                     await self._emit_event(
                         "tool_start",
                         {"tool": event.name, "input": event.input},
@@ -148,25 +305,41 @@ class SessionManager:
 
                 elif isinstance(event, TextDelta):
                     await self._emit_event("text", {"content": event.text})
+                    # Speak intermediate status updates so user knows what's happening
+                    # Debounce to avoid queuing too many speaks (causes overlap issues)
+                    now = time.time()
+                    time_since_last = now - self._last_status_speak_time
+                    if event.text and len(event.text) > 20 and time_since_last >= STATUS_SPEAK_DEBOUNCE_SECONDS:
+                        ts = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                        logger.info(f"[{ts}] SPEAK status: {event.text[:80]}...")
+                        self._last_status_speak_time = now
+                        await self.receptionist.speak(event.text)
 
                 elif isinstance(event, Result):
                     result_text = event.text
                     logger.info(f"Professor result: {result_text[:100]}...")
 
+            span.set_attribute("tool_count", tool_count)
+            span.set_attribute(SpanAttributes.OUTPUT_VALUE, result_text[:500])
+
         except asyncio.CancelledError:
             logger.info("Professor cancelled (barge-in)")
             result_text = "The request was cancelled."
+            span.set_attribute("cancelled", True)
         except Exception as e:
             logger.error(f"Professor error: {e}", exc_info=True)
             result_text = "Sorry, I encountered an error processing that request."
+            span.record_exception(e)
         finally:
+            span.end()
             self.state.phase = SessionPhase.IDLE
             await self._emit_state()
 
         # Send result back to Receptionist to speak
-        logger.info("Sending Professor result to Receptionist")
+        ts = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        logger.info(f"[{ts}] SPEAK result: {result_text[:80]}...")
         await self.receptionist.send_function_result(call_id, result_text)
-        logger.info("Professor handoff complete")
+        logger.info(f"[{ts}] Professor handoff complete")
 
     async def _handle_audio(self, audio_data: bytes):
         """Handle incoming audio from client."""
@@ -187,18 +360,29 @@ class SessionManager:
             case _:
                 pass
 
-    async def _handle_vad_start(self):
-        """User started speaking - handle barge-in."""
-        if self.state.phase == SessionPhase.PROFESSOR_THINKING:
-            # Cancel Professor task
-            await self.professor.cancel()
+    async def _handle_barge_in(self):
+        """Handle barge-in when user starts speaking during output."""
+        logger.info("Barge-in: user interrupted, clearing audio")
 
-        elif self.state.phase == SessionPhase.RECEPTIONIST_SPEAKING:
-            # Cancel current response
-            await self.receptionist.cancel_response()
+        # Tell frontend to clear its audio buffer immediately
+        await self._emit_event("barge_in", {})
+
+        # Cancel the OpenAI response to stop audio output
+        await self.receptionist.cancel_response()
+
+        # Also cancel Professor if it's thinking
+        if self.state.phase == SessionPhase.PROFESSOR_THINKING:
+            logger.info("Barge-in: cancelling Professor task")
+            await self.professor.cancel()
+            if self.professor_task and not self.professor_task.done():
+                self.professor_task.cancel()
 
         self.state.phase = SessionPhase.LISTENING
         await self._emit_state()
+
+    async def _handle_vad_start(self):
+        """User started speaking - handle barge-in (legacy, from frontend control message)."""
+        await self._handle_barge_in()
 
     async def _handle_vad_end(self):
         """User stopped speaking."""
@@ -220,6 +404,17 @@ class SessionManager:
 
     async def _emit_event(self, event_type: str, data: dict[str, Any]):
         """Send an event to client."""
+        import datetime
+        ts = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
+
+        # Log events that appear in the Thoughts UI
+        if event_type == "transcript":
+            logger.info(f"[{ts}] THOUGHT transcript [{data.get('role')}]: {data.get('text', '')[:100]}")
+        elif event_type == "tool_start":
+            logger.info(f"[{ts}] THOUGHT tool_start: {data.get('tool')} - {str(data.get('input', ''))[:100]}")
+        elif event_type == "text":
+            logger.info(f"[{ts}] THOUGHT text: {data.get('content', '')[:100]}")
+
         await self.websocket.send_json({
             "type": event_type,
             **data,

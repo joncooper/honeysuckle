@@ -8,6 +8,8 @@
 export function createAudioPlayer(sampleRate = 24000) {
   let audioContext: AudioContext | null = null
   let nextStartTime = 0
+  // Track active sources so we can stop them on barge-in
+  const activeSources: Set<AudioBufferSourceNode> = new Set()
 
   const init = () => {
     if (!audioContext) {
@@ -40,6 +42,12 @@ export function createAudioPlayer(sampleRate = 24000) {
     source.buffer = buffer
     source.connect(ctx.destination)
 
+    // Track this source
+    activeSources.add(source)
+    source.onended = () => {
+      activeSources.delete(source)
+    }
+
     // Schedule playback
     const startTime = Math.max(ctx.currentTime, nextStartTime)
     source.start(startTime)
@@ -47,10 +55,21 @@ export function createAudioPlayer(sampleRate = 24000) {
   }
 
   const clear = () => {
+    // Stop all active audio sources immediately
+    for (const source of activeSources) {
+      try {
+        source.stop()
+      } catch {
+        // Already stopped
+      }
+    }
+    activeSources.clear()
     nextStartTime = audioContext?.currentTime ?? 0
+    console.log('Audio cleared (barge-in)')
   }
 
   const close = () => {
+    clear()
     audioContext?.close()
     audioContext = null
     nextStartTime = 0

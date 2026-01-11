@@ -164,3 +164,41 @@ A running log of work sessions, achievements, architectural decisions, and next 
 - Start Milestone 2: Safety & Polish
 - Enable Phoenix tracing for better observability
 - Fix the SDK cancel scope error
+
+---
+
+## [2026-01-10] Phoenix Observability & Barge-in
+
+**Achieved:**
+- Phoenix tracing now fully operational with proper parent-child span hierarchy
+  - `conversation_turn` parent spans contain nested children
+  - `user_utterance`, `receptionist_routing`, `professor_invocation` as child spans
+  - Tool executions nested under professor_invocation
+- Fixed Phoenix data persistence across restarts (`use_temp_dir=False`, `batch=True`)
+- Added Receptionist-tier tracing events: `SpeechStarted`, `SpeechStopped`, `ResponseStarted`, `ResponseDone`
+- Implemented working barge-in: user can interrupt and audio stops immediately
+  - Backend sends `barge_in` event via WebSocket
+  - Frontend tracks active `AudioBufferSourceNode`s and stops them on clear
+  - OpenAI response cancelled, Professor task cancelled if running
+
+**Architectural Decisions:**
+- DECISION: Model conversation "turns" starting from VAD speech detection
+- REASON: In a voice-first app with barge-in, the natural unit of work is "user speaks → system responds". VAD detection (`input_audio_buffer.speech_started`) marks the beginning of a turn, and `response.done` marks the end.
+
+- DECISION: Use OpenTelemetry context propagation for span hierarchy
+- REASON: `set_span_in_context()` creates a context that child spans can reference, ensuring proper parent-child relationships in Phoenix UI. Without this, all spans appear flat and disconnected.
+
+**Lessons Learned:**
+- Phoenix `px.launch_app()` defaults to `use_temp_dir=True` which loses data on restart - use `use_temp_dir=False` for persistence
+- `batch=True` in Phoenix register() uses BatchSpanProcessor for reliable persistence vs SimpleSpanProcessor
+- OpenTelemetry span hierarchy requires explicit context passing - spans don't automatically nest
+- `tracer.start_span(name, context=parent_context)` creates a child span under the parent
+- Web Audio API queues audio buffers - barge-in must stop all active `AudioBufferSourceNode`s, not just stop sending new audio
+- OpenAI Realtime `response.cancel` stops the LLM but doesn't clear already-sent audio chunks
+
+**Next:**
+- Commit current state
+- Consider cleaning up verbose audio logging
+- Remove test spans polluting Phoenix UI
+- Start Safety & Polish milestone: voice approval flow, ambient feedback sounds
+- Fix Claude Agent SDK cancel scope error (honeysuckle-6toj)

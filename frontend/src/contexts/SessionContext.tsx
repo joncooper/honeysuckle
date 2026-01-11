@@ -188,6 +188,11 @@ export function SessionProvider({ children }: SessionProviderProps) {
         ])
         break
 
+      case 'barge_in':
+        // User interrupted - clear audio buffer immediately
+        audioPlayerRef.current?.clear()
+        break
+
       case 'error':
         console.error('Server error:', message.message)
         break
