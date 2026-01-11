@@ -36,3 +36,4 @@ htmlcov/
 # Lock files (optional - some prefer to commit these)
 # uv.lock
 # bun.lockb
+.mcp.json
