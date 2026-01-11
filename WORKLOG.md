@@ -238,3 +238,66 @@ A running log of work sessions, achievements, architectural decisions, and next 
 - Remove test spans polluting Phoenix UI
 - Start Safety & Polish milestone: voice approval flow, ambient feedback sounds
 - Fix Claude Agent SDK cancel scope error (honeysuckle-6toj)
+
+---
+
+## [2026-01-10] Comprehensive Test Suite for Orchestration
+
+**Achieved:**
+- Implemented complete mock-based testing strategy (38 tests, all passing)
+- Created Protocol classes for dependency injection in SessionManager
+  - `SamClientProtocol` and `FoyleClientProtocol` in `protocols.py`
+  - SessionManager now accepts optional injected clients
+- Built test infrastructure:
+  - `tests/mocks.py` - MockSamClient, MockFoyleClient with event injection
+  - `tests/fakes.py` - FakeWebSocket capturing all sent messages
+  - `tests/conftest.py` - pytest fixtures composing the test dependencies
+- Session Manager tests (`test_session/test_manager.py` - 25 tests):
+  - State transitions (IDLE → LISTENING → SAM_SPEAKING → IDLE)
+  - Sam → Foyle handoff (ask_foyle triggers Foyle, result sent back)
+  - Barge-in handling (cancels Sam response, cancels Foyle task)
+  - Event routing (audio, transcripts, tool starts forwarded to WebSocket)
+  - Error handling (Sam connect failure, Foyle exceptions)
+  - Edge cases (multiple rapid barge-ins, out-of-order events)
+  - Status speak debouncing verification
+- Tracing tests (`test_observability/test_tracing.py` - 13 tests):
+  - Session/turn/foyle_invocation spans created with correct attributes
+  - Span parent/child hierarchy verification (greeting→session, turn→session, foyle→turn)
+  - Error and cancellation recording in spans
+- Renamed "Receptionist" → "Sam" and "Professor" → "Foyle" throughout codebase
+  - Based on Foyle's War TV series (Honeysuckle Weeks plays Sam Stewart)
+  - Updated README with Foyle's War reference and image
+
+**Architectural Decisions:**
+- DECISION: Use Protocol classes for mock injection, not ABC inheritance
+- REASON: Python's `typing.Protocol` with `@runtime_checkable` provides structural subtyping - the mock just needs matching methods, no explicit inheritance required. This is more Pythonic and less invasive.
+
+- DECISION: Module-level TracerProvider setup in tracing tests
+- REASON: OpenTelemetry's global TracerProvider can only be set once per process. Using per-test fixtures causes warnings and potential issues. Module-level setup with `exporter.clear()` between tests is the recommended pattern.
+
+**Lessons Learned:**
+- OpenTelemetry global state requires careful test setup - can't swap TracerProvider per test
+- AsyncIterator mocks need explicit generator syntax (`async def ... yield`)
+- Async generators that raise exceptions before yielding still need `yield` statement for type checking
+- Barge-in during async cleanup can cause state to end up IDLE not LISTENING due to task completion order
+- Sleep-based test synchronization works but is inherently flaky - consider `asyncio.Event` for future improvements
+
+**Test Coverage Summary:**
+| Category | Tests | Coverage |
+|----------|-------|----------|
+| State Transitions | 4 | Happy path state machine |
+| Sam→Foyle Handoff | 3 | Function call routing, result return |
+| Barge-in | 4 | Sam cancel, Foyle cancel, rapid barge-in |
+| Event Routing | 4 | Audio, transcript, tool, state events |
+| Error Handling | 3 | Connect failure, Foyle exceptions |
+| Event Ordering | 3 | Out-of-order events don't crash |
+| Debouncing | 1 | Status speak throttling |
+| Session Lifecycle | 3 | Connect, greeting, cleanup |
+| Span Hierarchy | 3 | Parent/child relationships |
+| Tracing Attributes | 7 | Session ID, turn number, input/output |
+
+**Next:**
+- Consider parameterized tests to reduce duplication
+- Add timeout markers to prevent hung tests
+- Clean up verbose audio logging
+- Start Safety & Polish milestone: voice approval flow

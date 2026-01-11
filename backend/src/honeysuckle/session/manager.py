@@ -18,6 +18,7 @@ from opentelemetry.trace import set_span_in_context
 logger = logging.getLogger(__name__)
 
 from honeysuckle.foyle.client import FoyleClient, Result, TextDelta, ToolStart
+from honeysuckle.protocols import FoyleClientProtocol, SamClientProtocol
 from honeysuckle.sam.client import (
     AudioDelta,
     FunctionCall,
@@ -48,11 +49,16 @@ class SessionManager:
     flows, and barge-in cancellation.
     """
 
-    def __init__(self, websocket: WebSocket):
+    def __init__(
+        self,
+        websocket: WebSocket,
+        sam_client: SamClientProtocol | None = None,
+        foyle_client: FoyleClientProtocol | None = None,
+    ):
         self.websocket = websocket
         self.state = SessionState()
-        self.sam = SamClient()
-        self.foyle = FoyleClient()
+        self.sam: SamClientProtocol = sam_client if sam_client is not None else SamClient()
+        self.foyle: FoyleClientProtocol = foyle_client if foyle_client is not None else FoyleClient()
         self.foyle_task: asyncio.Task | None = None
         self._running = False
         self._sam_task: asyncio.Task | None = None
