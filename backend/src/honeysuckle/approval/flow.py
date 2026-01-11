@@ -21,7 +21,7 @@ class ApprovalFlow:
     """
     Manages voice-based approval for risky operations.
 
-    Uses the Receptionist to speak the approval request and
+    Uses Sam to speak the approval request and
     listens for the user's yes/no response.
     """
 

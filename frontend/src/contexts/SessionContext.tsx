@@ -12,8 +12,8 @@ import { createAudioPlayer } from '../lib/audio'
 export type SessionPhase =
   | 'idle'
   | 'listening'
-  | 'receptionist_speaking'
-  | 'professor_thinking'
+  | 'sam_speaking'
+  | 'foyle_thinking'
   | 'awaiting_approval'
 
 export interface SessionState {

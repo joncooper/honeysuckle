@@ -17,11 +17,11 @@ from opentelemetry.trace import set_span_in_context
 
 logger = logging.getLogger(__name__)
 
-from honeysuckle.professor.client import ProfessorClient, Result, TextDelta, ToolStart
-from honeysuckle.receptionist.client import (
+from honeysuckle.foyle.client import FoyleClient, Result, TextDelta, ToolStart
+from honeysuckle.sam.client import (
     AudioDelta,
     FunctionCall,
-    ReceptionistClient,
+    SamClient,
     ResponseDone,
     ResponseStarted,
     SpeechStarted,
@@ -43,24 +43,24 @@ class SessionManager:
     """
     Orchestrates the Split-Brain architecture.
 
-    Manages handoff between Receptionist (OpenAI Realtime) and
-    Professor (Claude Agent SDK), handles ambient audio, approval
+    Manages handoff between Sam (OpenAI Realtime) and
+    Foyle (Claude Agent SDK), handles ambient audio, approval
     flows, and barge-in cancellation.
     """
 
     def __init__(self, websocket: WebSocket):
         self.websocket = websocket
         self.state = SessionState()
-        self.receptionist = ReceptionistClient()
-        self.professor = ProfessorClient()
-        self.professor_task: asyncio.Task | None = None
+        self.sam = SamClient()
+        self.foyle = FoyleClient()
+        self.foyle_task: asyncio.Task | None = None
         self._running = False
-        self._receptionist_task: asyncio.Task | None = None
+        self._sam_task: asyncio.Task | None = None
         self._last_status_speak_time: float = 0  # For debouncing status updates
         self._session_id = str(uuid.uuid4())  # Unique ID for Phoenix session tracking
 
         # Span tracking hierarchy:
-        # session (root) → conversation_turn → user_utterance/routing/professor
+        # session (root) → conversation_turn → user_utterance/routing/foyle
         self._session_span = None            # Root span for entire session
         self._session_context: Context | None = None  # Context for session-level children
         self._session_start_time: float = 0
@@ -83,7 +83,7 @@ class SessionManager:
 
         # Connect to OpenAI Realtime
         try:
-            await self.receptionist.connect()
+            await self.sam.connect()
             logger.info("Connected to OpenAI Realtime API")
             self.state.phase = SessionPhase.IDLE
             await self._emit_state()
@@ -93,12 +93,12 @@ class SessionManager:
             self._end_session(error=str(e))
             return
 
-        # Start receptionist event loop
-        self._receptionist_task = asyncio.create_task(self._receptionist_loop())
+        # Start Sam event loop
+        self._sam_task = asyncio.create_task(self._sam_loop())
 
         # Greet the user (as a session-level child span)
         with self._session_child_span("greeting") as span:
-            await self.receptionist.speak("Hi! I'm Honeysuckle, your email and calendar assistant. How can I help you?")
+            await self.sam.speak("Hi! I'm Honeysuckle, your email and calendar assistant. How can I help you?")
 
         # Handle client messages
         try:
@@ -128,21 +128,21 @@ class SessionManager:
             self._current_turn_span = None
             self._current_turn_context = None
 
-        if self._receptionist_task and not self._receptionist_task.done():
-            self._receptionist_task.cancel()
+        if self._sam_task and not self._sam_task.done():
+            self._sam_task.cancel()
             try:
-                await self._receptionist_task
+                await self._sam_task
             except asyncio.CancelledError:
                 pass
 
-        if self.professor_task and not self.professor_task.done():
-            self.professor_task.cancel()
+        if self.foyle_task and not self.foyle_task.done():
+            self.foyle_task.cancel()
             try:
-                await self.professor_task
+                await self.foyle_task
             except asyncio.CancelledError:
                 pass
 
-        await self.receptionist.disconnect()
+        await self.sam.disconnect()
 
         # End the session span
         self._end_session()
@@ -248,10 +248,10 @@ class SessionManager:
         finally:
             span.end()
 
-    async def _receptionist_loop(self):
-        """Handle events from the Receptionist."""
+    async def _sam_loop(self):
+        """Handle events from Sam."""
         try:
-            async for event in self.receptionist.events():
+            async for event in self.sam.events():
                 if isinstance(event, AudioDelta):
                     # Forward audio to client
                     await self.websocket.send_bytes(event.data)
@@ -286,27 +286,27 @@ class SessionManager:
 
                 elif isinstance(event, FunctionCall):
                     # Record routing decision as child span
-                    with self._child_span("receptionist_routing", routing_decision="professor", function_name=event.name) as span:
+                    with self._child_span("sam_routing", routing_decision="foyle", function_name=event.name) as span:
                         pass
 
-                    if event.name == "ask_professor":
-                        # Hand off to Professor (non-blocking!)
+                    if event.name == "ask_foyle":
+                        # Hand off to Foyle (non-blocking!)
                         query = event.args.get("query", "")
-                        logger.info(f"Function call: ask_professor({query[:50]}...) - spawning background task")
-                        # Pass turn context to professor so its spans are children of this turn
+                        logger.info(f"Function call: ask_foyle({query[:50]}...) - spawning background task")
+                        # Pass turn context to Foyle so its spans are children of this turn
                         turn_context = self._current_turn_context
-                        self.professor_task = asyncio.create_task(
-                            self._invoke_professor(query, event.call_id, turn_context)
+                        self.foyle_task = asyncio.create_task(
+                            self._invoke_foyle(query, event.call_id, turn_context)
                         )
 
                 elif isinstance(event, ResponseStarted):
-                    # Receptionist started responding
-                    self.state.phase = SessionPhase.RECEPTIONIST_SPEAKING
+                    # Sam started responding
+                    self.state.phase = SessionPhase.SAM_SPEAKING
                     await self._emit_state()
                     logger.info(f"Response started: {event.response_id}")
 
                 elif isinstance(event, ResponseDone):
-                    # Receptionist finished responding - turn is complete
+                    # Sam finished responding - turn is complete
                     self._end_turn(interrupted=False)
                     self.state.phase = SessionPhase.IDLE
                     await self._emit_state()
@@ -315,15 +315,15 @@ class SessionManager:
         except asyncio.CancelledError:
             pass
 
-    async def _invoke_professor(self, query: str, call_id: str, turn_context: Context | None):
-        """Hand off to Professor for deep reasoning. Runs as background task."""
+    async def _invoke_foyle(self, query: str, call_id: str, turn_context: Context | None):
+        """Hand off to Foyle for deep reasoning. Runs as background task."""
         import datetime
 
         tracer = get_tracer()
 
-        # Create professor_invocation as child of the turn
+        # Create foyle_invocation as child of the turn
         span = tracer.start_span(
-            "professor_invocation",
+            "foyle_invocation",
             context=turn_context,
             attributes={
                 SpanAttributes.SESSION_ID: self._session_id,
@@ -331,11 +331,11 @@ class SessionManager:
                 "call_id": call_id,
             }
         )
-        # Create context for tool spans to be children of professor_invocation
-        professor_context = set_span_in_context(span)
+        # Create context for tool spans to be children of foyle_invocation
+        foyle_context = set_span_in_context(span)
 
-        logger.info(f"Professor starting for query: {query[:50]}...")
-        self.state.phase = SessionPhase.PROFESSOR_THINKING
+        logger.info(f"Foyle starting for query: {query[:50]}...")
+        self.state.phase = SessionPhase.FOYLE_THINKING
         await self._emit_state()
 
         # Reset debounce so first status update gets spoken
@@ -345,14 +345,14 @@ class SessionManager:
         tool_count = 0
 
         try:
-            async for event in self.professor.run(query):
+            async for event in self.foyle.run(query):
                 if isinstance(event, ToolStart):
                     tool_count += 1
-                    logger.info(f"Professor tool start: {event.name}")
-                    # Create child span for tool execution under professor_invocation
+                    logger.info(f"Foyle tool start: {event.name}")
+                    # Create child span for tool execution under foyle_invocation
                     tool_span = tracer.start_span(
                         "tool_execution",
-                        context=professor_context,
+                        context=foyle_context,
                         attributes={
                             SpanAttributes.SESSION_ID: self._session_id,
                             "tool.name": event.name,
@@ -376,21 +376,21 @@ class SessionManager:
                         ts = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
                         logger.info(f"[{ts}] SPEAK status: {event.text[:80]}...")
                         self._last_status_speak_time = now
-                        await self.receptionist.speak(event.text)
+                        await self.sam.speak(event.text)
 
                 elif isinstance(event, Result):
                     result_text = event.text
-                    logger.info(f"Professor result: {result_text[:100]}...")
+                    logger.info(f"Foyle result: {result_text[:100]}...")
 
             span.set_attribute("tool_count", tool_count)
             span.set_attribute(SpanAttributes.OUTPUT_VALUE, result_text[:500])
 
         except asyncio.CancelledError:
-            logger.info("Professor cancelled (barge-in)")
+            logger.info("Foyle cancelled (barge-in)")
             result_text = "The request was cancelled."
             span.set_attribute("cancelled", True)
         except Exception as e:
-            logger.error(f"Professor error: {e}", exc_info=True)
+            logger.error(f"Foyle error: {e}", exc_info=True)
             result_text = "Sorry, I encountered an error processing that request."
             span.record_exception(e)
         finally:
@@ -398,15 +398,15 @@ class SessionManager:
             self.state.phase = SessionPhase.IDLE
             await self._emit_state()
 
-        # Send result back to Receptionist to speak
+        # Send result back to Sam to speak
         ts = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
         logger.info(f"[{ts}] SPEAK result: {result_text[:80]}...")
-        await self.receptionist.send_function_result(call_id, result_text)
-        logger.info(f"[{ts}] Professor handoff complete")
+        await self.sam.send_function_result(call_id, result_text)
+        logger.info(f"[{ts}] Foyle handoff complete")
 
     async def _handle_audio(self, audio_data: bytes):
         """Handle incoming audio from client."""
-        await self.receptionist.send_audio(audio_data)
+        await self.sam.send_audio(audio_data)
 
     async def _handle_control(self, message: dict[str, Any]):
         """Handle control messages from client."""
@@ -431,14 +431,14 @@ class SessionManager:
         await self._emit_event("barge_in", {})
 
         # Cancel the OpenAI response to stop audio output
-        await self.receptionist.cancel_response()
+        await self.sam.cancel_response()
 
-        # Also cancel Professor if it's thinking
-        if self.state.phase == SessionPhase.PROFESSOR_THINKING:
-            logger.info("Barge-in: cancelling Professor task")
-            await self.professor.cancel()
-            if self.professor_task and not self.professor_task.done():
-                self.professor_task.cancel()
+        # Also cancel Foyle if thinking
+        if self.state.phase == SessionPhase.FOYLE_THINKING:
+            logger.info("Barge-in: cancelling Foyle task")
+            await self.foyle.cancel()
+            if self.foyle_task and not self.foyle_task.done():
+                self.foyle_task.cancel()
 
         self.state.phase = SessionPhase.LISTENING
         await self._emit_state()
@@ -449,7 +449,7 @@ class SessionManager:
 
     async def _handle_vad_end(self):
         """User stopped speaking."""
-        # Receptionist will process the utterance
+        # Sam will process the utterance
         pass
 
     async def _handle_approval_response(self, approved: bool):

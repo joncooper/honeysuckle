@@ -1,4 +1,4 @@
-"""Audio buffer management for Receptionist."""
+"""Audio buffer management for Sam."""
 
 import asyncio
 from collections import deque

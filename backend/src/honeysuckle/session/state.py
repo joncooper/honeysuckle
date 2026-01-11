@@ -10,8 +10,8 @@ class SessionPhase(Enum):
 
     IDLE = "idle"
     LISTENING = "listening"
-    RECEPTIONIST_SPEAKING = "receptionist_speaking"
-    PROFESSOR_THINKING = "professor_thinking"
+    SAM_SPEAKING = "sam_speaking"
+    FOYLE_THINKING = "foyle_thinking"
     AWAITING_APPROVAL = "awaiting_approval"
 
 

@@ -1,4 +1,4 @@
-"""Approval hooks and tool interceptors for the Professor."""
+"""Approval hooks and tool interceptors for Foyle."""
 
 from typing import Any
 

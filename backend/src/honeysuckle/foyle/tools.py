@@ -1,4 +1,4 @@
-"""Tool definitions for the Professor.
+"""Tool definitions for Foyle.
 
 Currently uses gday CLI via Bash tool. May migrate to MCP tools
 in the future for finer control and better observability.

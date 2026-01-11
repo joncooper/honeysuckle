@@ -2,9 +2,9 @@
 
 ## Project Overview
 
-Honeysuckle is a voice-first email and calendar assistant using a "Split-Brain" architecture:
-- **Receptionist** (OpenAI Realtime): Low-latency voice interface, VAD, barge-in
-- **Professor** (Claude Agent SDK): Deep reasoning, tool execution via `gday` CLI
+Honeysuckle is a voice-first email and calendar assistant using a "Split-Brain" architecture, named after the TV series Foyle's War:
+- **Sam** (OpenAI Realtime): Low-latency voice interface, VAD, barge-in — like Sam Stewart, the capable driver/assistant
+- **Foyle** (Claude Agent SDK): Deep reasoning, tool execution via `gday` CLI — like DCS Foyle, the detective who does the investigation
 
 See `INITIAL-PROMPT.md` for full architecture specification.
 
@@ -140,7 +140,7 @@ beans done <id>      # Complete task
 1. **Voice-first, visual-companion:** Audio is primary, UI adapts to context
 2. **Context-aware deferral:** Risky/complex actions defer to high-bandwidth contexts
 3. **Human-in-the-loop:** Voice-based approval for sensitive operations
-4. **Split-brain:** Receptionist handles conversation flow, Professor handles reasoning
+4. **Split-brain:** Sam handles conversation flow, Foyle handles reasoning
 5. **Ambient feedback:** Never go silent during thinking - provide audio cues
 
 ## Tool Usage Patterns

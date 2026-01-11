@@ -1,4 +1,4 @@
-"""OpenAI Realtime WebSocket client."""
+"""OpenAI Realtime WebSocket client for Sam."""
 
 import asyncio
 import json
@@ -10,27 +10,27 @@ import websockets
 from websockets.client import WebSocketClientProtocol
 
 from honeysuckle.config import settings
-from honeysuckle.receptionist.functions import RECEPTIONIST_FUNCTIONS, RECEPTIONIST_SYSTEM_PROMPT
+from honeysuckle.sam.functions import SAM_FUNCTIONS, SAM_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class ReceptionistEvent:
-    """Base class for Receptionist events."""
+class SamEvent:
+    """Base class for Sam events."""
 
     pass
 
 
 @dataclass
-class AudioDelta(ReceptionistEvent):
-    """Audio output from Receptionist."""
+class AudioDelta(SamEvent):
+    """Audio output from Sam."""
 
     data: bytes
 
 
 @dataclass
-class TranscriptDelta(ReceptionistEvent):
+class TranscriptDelta(SamEvent):
     """Transcript of user or assistant speech."""
 
     text: str
@@ -38,8 +38,8 @@ class TranscriptDelta(ReceptionistEvent):
 
 
 @dataclass
-class FunctionCall(ReceptionistEvent):
-    """Function call from Receptionist."""
+class FunctionCall(SamEvent):
+    """Function call from Sam."""
 
     name: str
     args: dict[str, Any]
@@ -47,39 +47,39 @@ class FunctionCall(ReceptionistEvent):
 
 
 @dataclass
-class SpeechStarted(ReceptionistEvent):
+class SpeechStarted(SamEvent):
     """User started speaking (VAD detected)."""
 
     pass
 
 
 @dataclass
-class SpeechStopped(ReceptionistEvent):
+class SpeechStopped(SamEvent):
     """User stopped speaking (VAD detected)."""
 
     pass
 
 
 @dataclass
-class ResponseStarted(ReceptionistEvent):
-    """Receptionist started generating a response."""
+class ResponseStarted(SamEvent):
+    """Sam started generating a response."""
 
     response_id: str
 
 
 @dataclass
-class ResponseDone(ReceptionistEvent):
-    """Receptionist finished generating a response."""
+class ResponseDone(SamEvent):
+    """Sam finished generating a response."""
 
     response_id: str
 
 
-class ReceptionistClient:
+class SamClient:
     """
-    OpenAI Realtime API client.
+    OpenAI Realtime API client for Sam.
 
     Provides bidirectional audio streaming with function calling support.
-    The Receptionist handles low-latency conversational flow, VAD, and barge-in.
+    Sam handles low-latency conversational flow, VAD, and barge-in.
     """
 
     REALTIME_URL = "wss://api.openai.com/v1/realtime"
@@ -109,7 +109,7 @@ class ReceptionistClient:
             "type": "session.update",
             "session": {
                 "modalities": ["text", "audio"],
-                "instructions": RECEPTIONIST_SYSTEM_PROMPT,
+                "instructions": SAM_SYSTEM_PROMPT,
                 "voice": settings.openai_realtime_voice,
                 "input_audio_format": "pcm16",
                 "output_audio_format": "pcm16",
@@ -120,7 +120,7 @@ class ReceptionistClient:
                     "prefix_padding_ms": 300,
                     "silence_duration_ms": 500,
                 },
-                "tools": RECEPTIONIST_FUNCTIONS,
+                "tools": SAM_FUNCTIONS,
             },
         })
 
@@ -132,7 +132,7 @@ class ReceptionistClient:
             self._ws = None
 
     async def send_audio(self, audio_data: bytes):
-        """Send audio data to Receptionist."""
+        """Send audio data to Sam."""
         if self._ws:
             import base64
 
@@ -148,7 +148,7 @@ class ReceptionistClient:
 
     async def speak(self, text: str):
         """
-        Have Receptionist speak the given text.
+        Have Sam speak the given text.
 
         Uses the pattern: create a user message with instruction, then trigger response.
         See: https://community.openai.com/t/make-agent-speak-first-when-using-realtimesession/1328354
@@ -170,7 +170,7 @@ class ReceptionistClient:
             await self._send({"type": "response.create"})
 
     async def send_function_result(self, call_id: str, result: str):
-        """Send function call result back to Receptionist."""
+        """Send function call result back to Sam."""
         logger.info(f"Sending function result for {call_id}: {result[:100]}...")
         if self._ws:
             await self._send({
@@ -184,8 +184,8 @@ class ReceptionistClient:
             await self._send({"type": "response.create"})
             logger.info("Triggered response.create after function result")
 
-    async def events(self) -> AsyncIterator[ReceptionistEvent]:
-        """Iterate over events from Receptionist."""
+    async def events(self) -> AsyncIterator[SamEvent]:
+        """Iterate over events from Sam."""
         if not self._ws:
             return
 
@@ -201,7 +201,7 @@ class ReceptionistClient:
             except asyncio.CancelledError:
                 break
 
-    def _parse_event(self, event: dict[str, Any]) -> ReceptionistEvent | None:
+    def _parse_event(self, event: dict[str, Any]) -> SamEvent | None:
         """Parse raw event into typed event."""
         event_type = event.get("type", "")
 

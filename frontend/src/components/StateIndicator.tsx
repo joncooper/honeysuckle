@@ -3,16 +3,16 @@ import { useSession } from '../contexts/SessionContext'
 const stateLabels: Record<string, string> = {
   idle: 'Ready',
   listening: 'Listening...',
-  receptionist_speaking: 'Speaking',
-  professor_thinking: 'Thinking...',
+  sam_speaking: 'Sam Speaking',
+  foyle_thinking: 'Foyle Thinking...',
   awaiting_approval: 'Awaiting Approval',
 }
 
 const stateColors: Record<string, string> = {
   idle: 'bg-muted text-muted-foreground',
   listening: 'bg-green-500/20 text-green-400',
-  receptionist_speaking: 'bg-blue-500/20 text-blue-400',
-  professor_thinking: 'bg-yellow-500/20 text-yellow-400',
+  sam_speaking: 'bg-blue-500/20 text-blue-400',
+  foyle_thinking: 'bg-yellow-500/20 text-yellow-400',
   awaiting_approval: 'bg-red-500/20 text-red-400',
 }
 

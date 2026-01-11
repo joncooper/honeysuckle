@@ -53,12 +53,12 @@ export function AudioVisualizer() {
           // Listening - active waveform
           barHeight = 20 + Math.sin(Date.now() / 100 + i * 0.5) * 30 + Math.random() * 20
           color = 'hsl(142, 71%, 45%)'
-        } else if (state.phase === 'receptionist_speaking') {
-          // Speaking - smooth wave
+        } else if (state.phase === 'sam_speaking') {
+          // Sam speaking - smooth wave
           barHeight = 30 + Math.sin(Date.now() / 150 + i * 0.4) * 40
           color = 'hsl(210, 40%, 60%)'
-        } else if (state.phase === 'professor_thinking') {
-          // Thinking - pulsing
+        } else if (state.phase === 'foyle_thinking') {
+          // Foyle thinking - pulsing
           const pulse = Math.sin(Date.now() / 300) * 0.3 + 0.7
           barHeight = 25 * pulse + Math.sin(i * 0.5) * 10
           color = 'hsl(45, 93%, 47%)'

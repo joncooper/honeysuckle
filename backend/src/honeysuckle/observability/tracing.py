@@ -13,12 +13,12 @@ class SpanNames:
     # Voice turns
     VOICE_TURN = "voice_turn"  # VAD start → VAD end
 
-    # Receptionist operations
-    RECEPTIONIST_RESPONSE = "receptionist_response"  # Query → audio complete
-    RECEPTIONIST_CONNECT = "receptionist_connect"  # WebSocket connection
+    # Sam operations
+    SAM_RESPONSE = "sam_response"  # Query → audio complete
+    SAM_CONNECT = "sam_connect"  # WebSocket connection
 
-    # Professor operations
-    PROFESSOR_INVOCATION = "professor_invocation"  # Start → result
+    # Foyle operations
+    FOYLE_INVOCATION = "foyle_invocation"  # Start → result
     TOOL_EXECUTION = "tool_execution"  # Tool start → tool end
 
     # Approval flow
@@ -26,7 +26,7 @@ class SpanNames:
     APPROVAL_LATENCY = "approval_latency"  # Time waiting for user
 
     # Session operations
-    SESSION_HANDOFF = "session_handoff"  # Receptionist → Professor handoff
+    SESSION_HANDOFF = "session_handoff"  # Sam → Foyle handoff
     SESSION_CLEANUP = "session_cleanup"  # Session teardown
 
 
@@ -38,10 +38,10 @@ def create_voice_turn_span(user_id: str | None = None):
     return span
 
 
-def create_professor_span(query: str):
-    """Create a span for a Professor invocation."""
-    span = tracer.start_span(SpanNames.PROFESSOR_INVOCATION)
-    span.set_attribute("professor.query", query[:500])  # Truncate for safety
+def create_foyle_span(query: str):
+    """Create a span for a Foyle invocation."""
+    span = tracer.start_span(SpanNames.FOYLE_INVOCATION)
+    span.set_attribute("foyle.query", query[:500])  # Truncate for safety
     return span
 
 

@@ -2,7 +2,7 @@
 
 **Role:** You are a Principal Systems Engineer and AI Architect specializing in high-concurrency real-time systems, Agentic AI, and Human-in-the-Loop UX.
 
-**Objective:** Scaffold a production-ready voice-first email and calendar assistant using a "Split-Brain" architecture: **OpenAI Realtime API** as the continuous "Receptionist" (low-latency voice interface) and **Claude Agent SDK** as the on-demand "Professor" (deep reasoning and action execution).
+**Objective:** Scaffold a production-ready voice-first email and calendar assistant using a "Split-Brain" architecture: **OpenAI Realtime API** as the continuous "Sam" (low-latency voice interface) and **Claude Agent SDK** as the on-demand "Foyle" (deep reasoning and action execution).
 
 ---
 
@@ -84,7 +84,7 @@ The system recognizes action risk/complexity and defers appropriately:
 │                         FastAPI Backend                             │
 │                                                                     │
 │  ┌──────────────────────┐      ┌──────────────────────────────┐    │
-│  │     Receptionist     │      │          Professor           │    │
+│  │     Sam     │      │          Foyle           │    │
 │  │   (OpenAI Realtime)  │─────▶│    (Claude Agent SDK)        │    │
 │  │                      │      │                              │    │
 │  │  • Speech-to-speech  │      │  • ClaudeSDKClient           │    │
@@ -98,7 +98,7 @@ The system recognizes action risk/complexity and defers appropriately:
 │  ┌──────────────────────────────────────────────────────────────┐  │
 │  │                  SessionManager (Supervisor)                  │  │
 │  │                                                               │  │
-│  │  • Orchestrates Receptionist ↔ Professor handoff              │  │
+│  │  • Orchestrates Sam ↔ Foyle handoff              │  │
 │  │  • Injects ambient audio during thinking                      │  │
 │  │  • Manages voice-based approval flow                          │  │
 │  │  • Handles barge-in cancellation                              │  │
@@ -120,7 +120,7 @@ The system recognizes action risk/complexity and defers appropriately:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### A. The Receptionist (Fast Loop)
+### A. The Sam (Fast Loop)
 
 **Role:** Low-latency voice interface with prosody and tone awareness.
 
@@ -128,7 +128,7 @@ The system recognizes action risk/complexity and defers appropriately:
 - Persistent WebSocket to OpenAI Realtime API
 - Bidirectional audio streaming
 - Handles conversational turns, VAD, barge-in detection
-- Routes to Professor via function call: `ask_professor(query: str)`
+- Routes to Foyle via function call: `ask_foyle(query: str)`
 
 **Why OpenAI Realtime:**
 - True speech-to-speech (not STT→LLM→TTS pipeline)
@@ -136,7 +136,7 @@ The system recognizes action risk/complexity and defers appropriately:
 - Native barge-in handling
 - Sub-200ms response latency for conversational flow
 
-### B. The Professor (Slow Loop)
+### B. The Foyle (Slow Loop)
 
 **Role:** Deep reasoning, tool execution, and action planning.
 
@@ -164,7 +164,7 @@ async with ClaudeSDKClient(options=options) as client:
 ```
 
 **gday Integration:**
-The Professor executes email/calendar operations via the `gday` CLI:
+The Foyle executes email/calendar operations via the `gday` CLI:
 ```bash
 gday mail list --unread --json      # List unread emails
 gday mail read <id> --json          # Read specific email
@@ -178,12 +178,12 @@ gday cal create --quick "..."       # Create event
 **Responsibilities:**
 
 1. **Handoff Orchestration:**
-   - Receptionist says "ask_professor" → pause Receptionist output
-   - Spin up Professor task
-   - Stream Professor results back through Receptionist voice
+   - Sam says "ask_foyle" → pause Sam output
+   - Spin up Foyle task
+   - Stream Foyle results back through Sam voice
 
 2. **Ambient Audio Injection:**
-   - While Professor is thinking, inject subtle audio feedback
+   - While Foyle is thinking, inject subtle audio feedback
    - Options: soft acknowledgment ("mm-hmm"), gentle tone, or brief verbal status
    - Prevents "dead air" that makes users think connection dropped
 
@@ -197,7 +197,7 @@ gday cal create --quick "..."       # Create event
        if requires_approval(tool_name, tool_input):
            description = describe_action(tool_name, tool_input)
 
-           # Pause Professor, ask via Receptionist
+           # Pause Foyle, ask via Sam
            approved = await session.request_voice_approval(
                f"I need to {description}. Is that okay?"
            )
@@ -214,7 +214,7 @@ gday cal create --quick "..."       # Create event
 
 4. **Barge-In Handling:**
    - Frontend sends `vad_start` when user begins speaking
-   - If Professor is thinking: cancel task, clear buffers
+   - If Foyle is thinking: cancel task, clear buffers
    - If waiting for approval: interpret as "no" or new command
    - Send `response.cancel` to OpenAI Realtime
 
@@ -305,12 +305,12 @@ honeysuckle/
 │   │       │   ├── manager.py       # SessionManager (supervisor)
 │   │       │   ├── state.py         # Conversation state, task queue
 │   │       │   └── context.py       # UX context detection/management
-│   │       ├── receptionist/
+│   │       ├── sam/
 │   │       │   ├── __init__.py
 │   │       │   ├── client.py        # OpenAI Realtime WebSocket client
 │   │       │   ├── audio.py         # Audio buffer management
-│   │       │   └── functions.py     # Function definitions (ask_professor)
-│   │       ├── professor/
+│   │       │   └── functions.py     # Function definitions (ask_foyle)
+│   │       ├── foyle/
 │   │       │   ├── __init__.py
 │   │       │   ├── client.py        # Claude Agent SDK wrapper
 │   │       │   ├── hooks.py         # Approval hooks, tool interceptors
@@ -342,7 +342,7 @@ honeysuckle/
 │       ├── components/
 │       │   ├── ui/                  # shadcn/ui components
 │       │   ├── AudioVisualizer.tsx  # Real-time waveform
-│       │   ├── ThoughtsLog.tsx      # Professor's tool use stream
+│       │   ├── ThoughtsLog.tsx      # Foyle's tool use stream
 │       │   ├── StateIndicator.tsx   # Listening/Thinking/Approval states
 │       │   ├── ApprovalModal.tsx    # Visual approval UI (desktop)
 │       │   ├── InboxView.tsx        # Email list (desktop)
@@ -372,8 +372,8 @@ from typing import AsyncIterator
 class SessionState(Enum):
     IDLE = "idle"
     LISTENING = "listening"
-    RECEPTIONIST_SPEAKING = "receptionist_speaking"
-    PROFESSOR_THINKING = "professor_thinking"
+    RECEPTIONIST_SPEAKING = "sam_speaking"
+    PROFESSOR_THINKING = "foyle_thinking"
     AWAITING_APPROVAL = "awaiting_approval"
 
 @dataclass
@@ -387,48 +387,48 @@ class SessionManager:
     """
     Orchestrates the Split-Brain architecture.
 
-    Manages handoff between Receptionist (OpenAI Realtime) and
-    Professor (Claude Agent SDK), handles ambient audio, approval
+    Manages handoff between Sam (OpenAI Realtime) and
+    Foyle (Claude Agent SDK), handles ambient audio, approval
     flows, and barge-in cancellation.
     """
 
     def __init__(
         self,
-        receptionist: ReceptionistClient,
-        professor: ProfessorClient,
+        sam: SamClient,
+        foyle: FoyleClient,
         audio_sink: AudioSink,
     ):
-        self.receptionist = receptionist
-        self.professor = professor
+        self.sam = sam
+        self.foyle = foyle
         self.audio_sink = audio_sink
         self.state = SessionState.IDLE
-        self.professor_task: asyncio.Task | None = None
+        self.foyle_task: asyncio.Task | None = None
         self.pending_approval: ApprovalRequest | None = None
         self.task_queue: list[QueuedTask] = []
 
     async def run(self) -> AsyncIterator[SessionEvent]:
         """Main session loop."""
         async with asyncio.TaskGroup() as tg:
-            tg.create_task(self._receptionist_loop())
+            tg.create_task(self._sam_loop())
             tg.create_task(self._vad_monitor())
 
-    async def _receptionist_loop(self):
-        """Handle Receptionist events."""
-        async for event in self.receptionist.events():
+    async def _sam_loop(self):
+        """Handle Sam events."""
+        async for event in self.sam.events():
             match event:
-                case FunctionCall(name="ask_professor", args=args):
-                    await self._invoke_professor(args["query"])
+                case FunctionCall(name="ask_foyle", args=args):
+                    await self._invoke_foyle(args["query"])
 
                 case TranscriptDelta(text=text):
                     # User speech transcript
                     pass
 
                 case AudioDelta(data=data):
-                    # Receptionist audio output
+                    # Sam audio output
                     await self.audio_sink.write(data)
 
-    async def _invoke_professor(self, query: str):
-        """Hand off to Professor for deep reasoning."""
+    async def _invoke_foyle(self, query: str):
+        """Hand off to Foyle for deep reasoning."""
         self.state = SessionState.PROFESSOR_THINKING
 
         # Start ambient audio
@@ -437,27 +437,27 @@ class SessionManager:
         )
 
         try:
-            self.professor_task = asyncio.create_task(
-                self._run_professor(query)
+            self.foyle_task = asyncio.create_task(
+                self._run_foyle(query)
             )
-            result = await self.professor_task
+            result = await self.foyle_task
 
-            # Speak result via Receptionist
-            await self.receptionist.speak(result)
+            # Speak result via Sam
+            await self.sam.speak(result)
 
         except asyncio.CancelledError:
             # Barge-in occurred
-            await self.receptionist.speak(
+            await self.sam.speak(
                 "Sure, go ahead."
             )
         finally:
             ambient_task.cancel()
-            self.professor_task = None
+            self.foyle_task = None
             self.state = SessionState.IDLE
 
-    async def _run_professor(self, query: str) -> str:
-        """Execute Professor task with approval hooks."""
-        async for event in self.professor.run(query):
+    async def _run_foyle(self, query: str) -> str:
+        """Execute Foyle task with approval hooks."""
+        async for event in self.foyle.run(query):
             match event:
                 case ToolStart(name=name, input=input):
                     # Emit to frontend for Thoughts Log
@@ -491,8 +491,8 @@ class SessionManager:
             future=future,
         )
 
-        # Ask via Receptionist
-        await self.receptionist.speak(
+        # Ask via Sam
+        await self.sam.speak(
             f"I need to {description}. Is that okay?"
         )
 
@@ -506,33 +506,33 @@ class SessionManager:
             self.state = SessionState.PROFESSOR_THINKING
 
     async def _ambient_audio_loop(self):
-        """Inject subtle audio feedback during Professor thinking."""
+        """Inject subtle audio feedback during Foyle thinking."""
         while True:
             # Option 1: Brief verbal acknowledgment
-            # await self.receptionist.speak("mm-hmm", interrupt=False)
+            # await self.sam.speak("mm-hmm", interrupt=False)
 
             # Option 2: Soft audio cue
             # await self.audio_sink.write(SOFT_CHIME)
 
             # Option 3: Status update on long operations
-            # await self.receptionist.speak("still working on that...")
+            # await self.sam.speak("still working on that...")
 
             await asyncio.sleep(3.0)
 
     async def handle_vad_start(self):
         """User started speaking - handle barge-in."""
         if self.state == SessionState.PROFESSOR_THINKING:
-            # Cancel Professor task
-            if self.professor_task:
-                self.professor_task.cancel()
+            # Cancel Foyle task
+            if self.foyle_task:
+                self.foyle_task.cancel()
 
         elif self.state == SessionState.AWAITING_APPROVAL:
             # Interpret as response to approval request
-            # (actual yes/no determined by Receptionist transcript)
+            # (actual yes/no determined by Sam transcript)
             pass
 
         # Clear audio buffers
-        await self.receptionist.cancel_response()
+        await self.sam.cancel_response()
         await self.audio_sink.clear()
 
     async def handle_approval_response(self, approved: bool):
@@ -556,8 +556,8 @@ tracer = trace.get_tracer("honeysuckle")
 
 # Spans to create:
 # - voice_turn: VAD start → VAD end (user speaking)
-# - receptionist_response: Query → audio complete
-# - professor_invocation: Start → result
+# - sam_response: Query → audio complete
+# - foyle_invocation: Start → result
 # - tool_execution: Tool start → tool end
 # - approval_flow: Request → user response
 # - approval_latency: Time waiting for user
@@ -576,7 +576,7 @@ Tasks:
 - FastAPI WebSocket endpoint (`/ws/audio`)
 - OpenAI Realtime client (bidirectional audio streaming)
 - Claude Agent SDK integration with gday CLI
-- Basic SessionManager (Receptionist → Professor handoff)
+- Basic SessionManager (Sam → Foyle handoff)
 - Minimal frontend (audio visualizer + state indicator)
 
 **Done when:** User can ask "What emails do I have?" and hear the response.
@@ -587,7 +587,7 @@ Tasks:
 Tasks:
 - Voice-based approval flow via Agent SDK hooks
 - Action risk assessment (classify operations by risk level)
-- Barge-in handling (cancel Professor on VAD)
+- Barge-in handling (cancel Foyle on VAD)
 - Ambient audio feedback during thinking
 - Thoughts Log UI (stream tool use to frontend)
 

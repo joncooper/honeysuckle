@@ -1,4 +1,4 @@
-"""Claude Agent SDK wrapper for the Professor."""
+"""Claude Agent SDK wrapper for Foyle."""
 
 import asyncio
 from dataclasses import dataclass
@@ -13,18 +13,18 @@ from claude_agent_sdk import (
     query,
 )
 
-from honeysuckle.professor.prompts import PROFESSOR_SYSTEM_PROMPT
+from honeysuckle.foyle.prompts import FOYLE_SYSTEM_PROMPT
 
 
 @dataclass
-class ProfessorEvent:
-    """Base class for Professor events."""
+class FoyleEvent:
+    """Base class for Foyle events."""
 
     pass
 
 
 @dataclass
-class ToolStart(ProfessorEvent):
+class ToolStart(FoyleEvent):
     """Tool execution started."""
 
     name: str
@@ -32,7 +32,7 @@ class ToolStart(ProfessorEvent):
 
 
 @dataclass
-class ToolEnd(ProfessorEvent):
+class ToolEnd(FoyleEvent):
     """Tool execution completed."""
 
     name: str
@@ -40,7 +40,7 @@ class ToolEnd(ProfessorEvent):
 
 
 @dataclass
-class ApprovalNeeded(ProfessorEvent):
+class ApprovalNeeded(FoyleEvent):
     """Approval required for tool execution."""
 
     tool: str
@@ -49,15 +49,15 @@ class ApprovalNeeded(ProfessorEvent):
 
 
 @dataclass
-class TextDelta(ProfessorEvent):
-    """Text output from Professor."""
+class TextDelta(FoyleEvent):
+    """Text output from Foyle."""
 
     text: str
 
 
 @dataclass
-class Result(ProfessorEvent):
-    """Final result from Professor."""
+class Result(FoyleEvent):
+    """Final result from Foyle."""
 
     text: str
 
@@ -65,11 +65,11 @@ class Result(ProfessorEvent):
 ApprovalCallback = Callable[[str, dict[str, Any], str], bool]
 
 
-class ProfessorClient:
+class FoyleClient:
     """
     Claude Agent SDK client for deep reasoning and tool execution.
 
-    The Professor handles complex requests that require:
+    Foyle handles complex requests that require:
     - Multi-turn reasoning
     - Tool execution (gday CLI for email/calendar)
     - Human-in-the-loop approval flows
@@ -77,7 +77,7 @@ class ProfessorClient:
 
     def __init__(self, approval_callback: ApprovalCallback | None = None):
         """
-        Initialize Professor client.
+        Initialize Foyle client.
 
         Args:
             approval_callback: Async function to request user approval.
@@ -86,11 +86,11 @@ class ProfessorClient:
         self.approval_callback = approval_callback
         self._cancel_event: asyncio.Event | None = None
 
-    async def run(self, query_text: str) -> AsyncIterator[ProfessorEvent]:
+    async def run(self, query_text: str) -> AsyncIterator[FoyleEvent]:
         """
-        Run a query through the Professor.
+        Run a query through Foyle.
 
-        Yields events as the Professor reasons and executes tools.
+        Yields events as Foyle reasons and executes tools.
         Final event is always a Result with the response text.
 
         Args:
@@ -99,7 +99,7 @@ class ProfessorClient:
         self._cancel_event = asyncio.Event()
 
         options = ClaudeAgentOptions(
-            system_prompt=PROFESSOR_SYSTEM_PROMPT,
+            system_prompt=FOYLE_SYSTEM_PROMPT,
             allowed_tools=["Bash"],  # gday CLI access
             max_turns=10,
             permission_mode="bypassPermissions",  # We handle approval ourselves
@@ -132,6 +132,6 @@ class ProfessorClient:
             yield Result(text=f"Error processing request: {e}")
 
     async def cancel(self):
-        """Cancel the current Professor task."""
+        """Cancel the current Foyle task."""
         if self._cancel_event:
             self._cancel_event.set()
